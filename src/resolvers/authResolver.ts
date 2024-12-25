@@ -253,6 +253,63 @@ export class AuthResolver {
     sendRefreshToken(res, "");
     return true;
   }
+  @Mutation(() => LoginResponse)
+  async refreshToken(
+    @Arg("token") token: string,
+    @Ctx() { res }: MyContext
+  ): Promise<LoginResponse> {
+    if (!token) {
+      throw new Error("No refresh token");
+    }
 
-  
+    let payload: any;
+    
+    try {
+      payload = jwtVerify(token, REFRESH_TOKEN_SECRET);
+    } catch (err) {
+      throw new Error("Invalid refresh token");
+    }
+
+    // token is valid and we can send back an access token
+    const user = await User.findOne({ where: { id: payload.userId } });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (user.tokenVersion !== payload.tokenVersion) {
+      throw new Error("Token version invalid");
+    }
+
+    const { accessToken, refreshToken } = createTokens(
+      user.id,
+      user.tokenVersion
+    );
+
+    sendRefreshToken(res, refreshToken);
+
+    return { accessToken, user };
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(isAuth)
+  async revokeRefreshTokensForUser(
+    @Arg("userId") userId: number
+  ): Promise<boolean> {
+    try {
+      const user = await User.findOne({ where: { id: userId } });
+      if (!user) {
+        throw new Error("User not found");
+      }
+      
+      user.tokenVersion += 1;
+      await user.save();
+      
+      return true;
+    } catch (err) {
+      console.error("Error revoking refresh tokens:", err);
+      return false;
+    }
+  }
 }
+  
